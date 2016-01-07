@@ -608,7 +608,7 @@ util.extend(DataRange.prototype, {
         if (this.get("layer").getDrawType() === 'bubble') {
             this.get("layer").dataRangeControl.drawSizeSplit(this.splitList, this.get('drawOptions'));
         } else if (this.get("layer").getDrawType() === 'category') {
-            this.get("layer").dataRangeControl.drawCategorySplit(this.categorySplitList, this.get('drawOptions'));
+//            this.get("layer").dataRangeControl.drawCategorySplit(this.categorySplitList, this.get('drawOptions'));
         } else if (this.get("layer").getDrawType() === 'choropleth') {
             this.get("layer").dataRangeControl.drawChoroplethSplit(this.splitList, this.get('drawOptions'));
         } else {
@@ -968,9 +968,14 @@ goog.require('ol.style.Icon');
 goog.require('ol.style.Style');
 
 ol.MyOverlay=function(opt_options){
-	var options = opt_options ? opt_options : {};
+    var options = opt_options ? opt_options : {};
     var baseOptions = goog.object.clone(options);
     goog.base(this,baseOptions);
+  //   goog.base(this, {
+  //   handleDownEvent: ol.interaction.DragPan.handleDownEvent_,
+  //   handleDragEvent: ol.interaction.DragPan.handleDragEvent_,
+  //   handleUpEvent: ol.interaction.DragPan.handleUpEvent_
+  // });
 }
 goog.inherits(ol.MyOverlay,ol.Overlay);
 /**
@@ -990,7 +995,18 @@ function CanvasLayer(options) {
     this.options = options || {};
     this.paneName = this.options.paneName || 'labelPane';
     this.zIndex = this.options.zIndex || 0;
+    this.obj = this;
     this._map = options.map;
+    this.contextType = options.canvasType;
+    this.canvas = null;
+    this._context_ = null;
+    this.originPosition = null;
+    this.data = null;
+    // goog.base(this, {
+    //     handleDownEvent: this.handleDownEvent_,
+    //     handleDragEvent: this.handleDragEvent_,
+    //     handleUpEvent: this.handleUpEvent_
+    // });
     this.initialize(this._map);
     this.show();
 }
@@ -1000,23 +1016,96 @@ CanvasLayer.prototype = new ol.MyOverlay();
 CanvasLayer.prototype.initialize = function (map) {
     this._map = map;
     this.zoom = map.getView().getZoom();
-    var canvas = this.canvas = document.createElement("canvas");
-    canvas.setAttribute("id","2b");
-    canvas.style.cssText = "position:absolute;" + "left:0;" + "top:0;" + "z-index:" + this.zIndex + ";";
+    this.canvas = this.canvas = document.createElement("canvas");
+    var name = 'hello'+new Date().getTime();
+    this.canvas.setAttribute("id",name);
+    this.canvas.style.cssText = "position:absolute;" + "left:0;" + "top:0;" + "z-index:" + this.zIndex + ";";
+    if(this.contextType==='webgl'){
+        this._context_ = this.canvas.getContext('webgl');
+    }else{
+        this._context_ = this.canvas.getContext('2d');
+    }
+    // this._context_ = this.canvas.getContext('2d')||this.canvas.getContext('webgl');
     this.adjustSize();
-    map.getViewport().insertBefore(canvas,map.getViewport().childNodes[0]);
+    map.getViewport().insertBefore(this.canvas,map.getViewport().childNodes[0]);
+    // map.getViewport().insertBefore(this.canvas,map.getViewport().lastChild);
     //map.getPanes()[this.paneName].appendChild(canvas);
     var that = this;
     goog.events.listen(this._map,ol.MapEventType.POSTRENDER,this.updateMap,true,this);
+    // if(this.contextType!='webgl'){
+    //     goog.events.listen(this._map,ol.MapBrowserEvent.EventType.POINTERDRAG,this.handleDragEvent_,true,this);
+    //     // goog.events.listen(this._map,ol.MapBrowserEvent.EventType.POINTERMOVE,this.handleDragEvent_,true,this);
+    //     goog.events.listen(this._map,ol.MapBrowserEvent.EventType.POINTERDOWN,this.handleDownEvent_,true,this);
+    //     // goog.events.listen(this._map,ol.MapEventType.MOVEEND,this.handleUpEvent_,true,this);
+    //     goog.events.listen(this._map,ol.MapBrowserEvent.EventType.POINTERUP,this.handleUpEvent_,true,this);
+    // }
    
+    // map.on('moveend', function () {
+    //     that.adjustSize();
+    //     that.draw();
+    // });
     return this.canvas;
 };
-CanvasLayer.prototype.updateMap = function(){	
-	if($('#map-level')){
-		$('#map-level').html('L'+this._map.getView().getZoom());
-	}
-	this.draw();
-	// this.adjustSize();
+CanvasLayer.prototype.updateMap = function(){   
+    if($('#map-level')){
+        $('#map-level').html('L'+this._map.getView().getZoom());
+    }
+    this.draw();
+    // this.adjustSize();
+}
+CanvasLayer.prototype.handleDownEvent_ = function(mapBrowserEvent){
+    ol.animation.pan = function(options) {
+        var source = options.source;
+        var start = goog.isDef(options.start) ? options.start : goog.now();
+        var sourceX = source[0];
+        var sourceY = source[1];
+        var duration =  0;
+        var easing = goog.isDef(options.easing) ?
+          options.easing : ol.easing.inAndOut;
+        return (
+          /**
+           * @param {ol.Map} map Map.
+           * @param {?olx.FrameState} frameState Frame state.
+           */
+          function(map, frameState) {
+            if (frameState.time < start) {
+              frameState.animate = false;
+              frameState.viewHints[ol.ViewHint.ANIMATING] += 0;
+              return true;
+            } else if (frameState.time < start + duration) {
+              var delta = 1 - easing((frameState.time - start) / duration);
+              var deltaX = sourceX ;
+              var deltaY = sourceY ;
+              frameState.animate = false;
+              frameState.viewState.center[0] += 0;
+              frameState.viewState.center[1] += 0;
+              frameState.viewHints[ol.ViewHint.ANIMATING] += 0;
+              return true;
+            } else {
+              return false;
+            }
+      });
+    };
+    this.originPosition = mapBrowserEvent.pixel;
+    var size = map.getSize();
+    var ctx = this._context_;
+    this.data = ctx.getImageData(0,0,size[0],size[1]);
+        
+    console.log('down: '+this.originPosition)
+    // return false;
+}
+CanvasLayer.prototype.handleDragEvent_ = function(mapBrowserEvent){
+    //debugger;
+    var map = mapBrowserEvent.map;
+    var size = map.getSize();
+    var ctx = this._context_;
+    ctx.clearRect(0,0,size[0],size[1]);
+    ctx.putImageData(this.data,mapBrowserEvent.pixel[0]-this.originPosition[0],mapBrowserEvent.pixel[1]-this.originPosition[1]);
+
+}
+CanvasLayer.prototype.handleUpEvent_ = function(mapBrowserEvent){
+    this.adjustSize();
+    this.draw();
 }
 CanvasLayer.prototype.adjustSize = function () {
     var size = this._map.getSize();
@@ -1028,26 +1117,27 @@ CanvasLayer.prototype.adjustSize = function () {
 };
 
 CanvasLayer.prototype.draw = function () {
+    var that = this.obj;
     var map = this._map;
     var size = map.getSize();
     var center = map.getView().getCenter();
     if (center) {
         //var pixel = map.pointToOverlayPixel(center);
-    	var _p=map.getPixelFromCoordinate(center);
-    	var pixel={x:_p[0],y:_p[1]};
+        var _p=map.getPixelFromCoordinate(center);
+        var pixel={x:_p[0],y:_p[1]};
         var x_p = pixel.x - size[0] / 2;
         var y_p = pixel.y - size[1] / 2;
         this.canvas.style.left = x_p + 'px';
         this.canvas.style.top = y_p + 'px';
-        if(map.getView().getZoom()!=this.zoom){
+        if(map.getView().getZoom()!=that.zoom){
             if(x_p!=0&&y_p!=0){
-                this.hide();
+                that.hide();
             }else{
-                this.show();
-                this.zoom = map.getView().getZoom();
-                console.log(this.canvas.style.left+' '+this.canvas.style.top);
-                this.dispatchEvent('draw');
-                this.options.update && this.options.update.call(this);
+                that.show();
+                that.zoom = map.getView().getZoom();
+                console.log(that.canvas.style.left+' '+that.canvas.style.top);
+                that.dispatchEvent('draw');
+                that.options.update && that.options.update.call(this);
             }
             
         }else{
@@ -1070,9 +1160,12 @@ CanvasLayer.prototype.show = function () {
 
 CanvasLayer.prototype.hide = function () {
     this.canvas.style.display = "none";
-    //this._map.removeOverlay(this);
 };
-
+CanvasLayer.prototype.removeLayer = function () {
+    if($(this.canvas)){
+        $(this.canvas).remove();
+    }
+};
 CanvasLayer.prototype.setZIndex = function (zIndex) {
     this.canvas.style.zIndex = zIndex;
 };
@@ -1137,6 +1230,7 @@ util.extend(Layer.prototype, {
         this.canvasLayer = new CanvasLayer({
             map: this.getMap(),
             zIndex: this.getZIndex(),
+            canvasType:this._context,
             paneName: this.getPaneName(),
             update: function update() {
                 that.draw();
@@ -1318,23 +1412,29 @@ util.extend(Layer.prototype, {
     	
     	var map = this.getMapv().getMap();
         var mercatorProjection = map.getView().getProjection();
-        console.time('parseData');
+        // console.time('parseData');
         // 墨卡托坐标计算方法
         var zoom = map.getView().getZoom();
         var zoomUnit = Math.pow(2, 18 - zoom);
         //获取canvas
         var getCanvas = map.getViewport().children[0];
+        //ol.proj.transform(map.getView().getCenter(),'EPSG:4326','EPSG:900913');
+        
+        //var mcCenter = mercatorProjection.lngLatToPoint(map.getCenter());
         //屏幕中心点墨卡托坐标
         var mcCenter =map.getView().getCenter();
         //var nwMc ={x:mcCenter[0] -0.5971642833709717 * (map.getSize()[0] / 2 * zoomUnit), y:mcCenter[1] +0.5971642833709717 * (map.getSize()[1] / 2 * zoomUnit)}; //左上角墨卡托坐标
         var nwMc = {x:mcCenter[0] - map.getSize()[0] / 2 * zoomUnit, y:mcCenter[1] + map.getSize()[1] / 2 * zoomUnit}; //左上角墨卡托坐标
         var data = this.getData();
-        var map = this.getMap();
+        var map = this.getMap()||this._mapv._map;
         //获取屏幕范围单位m,[左，下，右，上]即[minx,miny,maxx,maxy]
         var extent = map.getView().calculateExtent(map.getSize());
         //一半的长宽
         var size =[Math.abs(extent[0]-mcCenter[0]),Math.abs(extent[1]-mcCenter[1])];
-        //遍历每一个数据，计算屏幕中的像素坐标x,y；                
+        //遍历每一个数据，计算屏幕中的像素坐标x,y；
+        //
+        //px,py:data中的数据点在屏幕中的像素坐标， 屏幕左上角（0,0），右下角是（canvas的widht，canvas的height）
+        
         // 当前比例尺下每米对应的屏幕像素，在宽度方向和高度方向
         var pixel_per_m_width=Number(map.getSize()[0])/Math.abs(extent[0]-extent[2]);
         var pixel_per_m_height=Number(map.getSize()[1])/Math.abs(extent[1]-extent[3]);
@@ -1378,7 +1478,7 @@ util.extend(Layer.prototype, {
                 data[j].pgeo = tmp;
             }
         }
-        console.timeEnd('parseData');
+        // console.timeEnd('parseData');
     	
         /**
         var map = this.getMapv().getMap();
@@ -1432,7 +1532,6 @@ util.extend(Layer.prototype, {
             }
             **/
         
-        console.timeEnd('parseData');
     },
     data_changed: function data_changed() {
         var data = this.getData();
@@ -4184,7 +4283,7 @@ SimpleDrawer.prototype.drawWebglPoint = function () {
     var halfCanvasWidth = gl.canvas.width / 2;
     var halfCanvasHeight = gl.canvas.height / 2;
     /********更改视图********/
-    //gl.viewport(0, 0, gl.canvas.clientWidth, gl.canvas.clientHeight);
+    gl.viewport(0, 0, gl.canvas.clientWidth, gl.canvas.clientHeight);
     /****************/
     var verticesData = [];
     var count = 0;
@@ -4193,7 +4292,7 @@ SimpleDrawer.prototype.drawWebglPoint = function () {
 
         // var x = item.w;
         // var y = item.h;
-        var x = (item.px - halfCanvasWidth) / halfCanvasWidth;
+         var x = (item.px - halfCanvasWidth) / halfCanvasWidth;
         var y = (halfCanvasHeight - item.py) / halfCanvasHeight;
 
         if (x < -1 || x > 1 || y < -1 || y > 1) {
